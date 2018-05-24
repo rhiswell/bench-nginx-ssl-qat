@@ -1,14 +1,20 @@
 #!/bin/bash
 
-set -x
+set -xe
 
 . config
 
+mkdir -p output
+mkdir -p tmpfs
+
 function stress_nginx_https
 {
+    local tmpfs=$1
+
     pids=()
-    for _ in `seq 1 100`; do
-        openssl s_time -connect ${nginx_server}:4400 -new -nbio -time 30 -cipher AES128-SHA > /dev/null & pids[${#pids[@]}]=$!
+    for worker_id in `seq 1 ${bench_server_openssl_max_s_time}`; do
+        openssl s_time -connect 192.168.100.1:4400 -new -nbio -time 30 -cipher AES128-SHA | \
+            tail -n1 | awk -F' ' '{ print $1 }' > $tmpfs/s_time_${worker_id} & pids[${#pids[@]}]=$!
     done
 
     # Wait for all openssl s_time instances to finish
@@ -21,22 +27,28 @@ function bench_nginx_ssl_cps
 {
     local dim_id=$1
     local output_file=output/${dim_id}_nginx_ssl_cps.csv
+    local tmpfs_path=tmpfs
 
-    printf 'number of nginx processes,CPS\n' >${output_file}
-    for nr_nginx_proc in `seq 1 8`; do
-        ssh ${nginx_server} "sed -i 's/worker_processes [1-9]+/worker_processes ${nr_nginx_proc}/g' \
-                             ${remote_nginx_root}/conf/nginx.conf && \
+    printf 'number of nginx processes, average CPS\n' >${output_file}
+    for nr_nginx_proc in `seq 1 ${nginx_server_max_cores}`; do
+        ssh ${nginx_server} "sed -i 's/worker_processes [1-9]+/worker_processes ${nr_nginx_proc}/g' ${remote_nginx_root}/conf/nginx.conf && \
                              ${remote_nginx_bin} -s stop && ${remote_nginx_bin}"
 
-        # Test 3 times
-        for _ in `seq 1 3`; do
-            perf stat stress_nginx_https | grep >>output_${nr_nginx_proc}
+        # S1: prepare tmpfs for outputs from openssl s_time instances
+        # S2: do perf stat to get eplased time of the job and write to ${tmpfs_path}/time_elapsed
+        # S3: reduce outputs from openssl s_time instances into one file: ${tmpfs_path}/total_connections
+        # S4: calculate CPS by function: total_connections / time_elapsed and write to output_{nr_nginx_proc}
+        for _ in `seq 1 ${bench_server_openssl_repeats}`; do
+            (umount ${tmpfs_path} || true) && mount -t tmpfs -o size=128m tmpfs ${tmpfs_path} && \
+                perf stat -n bash -c ". bench; stress_nginx_https ${tmpfs_path}" 2>&1 | grep 'time elapsed' | awk -F' ' '{ print $1 }' >${tmpfs_path}/time_elapsed && \
+                cat ${tmpfs_path}/s_time_* | awk '{ total += $1; } END { print total }' > ${tmpfs_path}/total_connections && \
+                paste ${tmpfs_path}/total_connections ${tmpfs_path}/time_elapsed | awk '{ print $1 / $2 }' >>output_${nr_nginx_proc}
         done
 
         # Calculate average CPS from n samples
         printf "${nr_nginx_proc}," >>${output_file} && \
-            awk '{ total += $1; count++ } END { print total/count }' output_${nr_nginx_proc} >>${output_file} && \
-            rm -f output_${nr_nginx_proc}
+            awk '{ total += $1; count++ } END { print total/count }' output_${nr_nginx_proc} >>${output_file}
+        rm -f output_${nr_nginx_proc}
     done
 }
 
@@ -46,7 +58,7 @@ case $1 in
         bench_nginx_ssl_cps $2
         ;;
     *)
-        echo "Usage: $0 {cps}"
-        exit 1
+        echo "Hello world!"
+        ;;
 esac
 

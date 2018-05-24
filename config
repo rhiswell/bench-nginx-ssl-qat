@@ -1,11 +1,14 @@
 #!/bin/bash
 
-nginx_server=192.168.1.126
+nginx_server=root@192.168.1.126
 remote_nginx_root=/usr/local/nginx
 remote_nginx_bin=${remote_nginx_root}/sbin/nginx
+nginx_server_max_cores=8
 
-bench_server=192.168.1.66
+bench_server=root@192.168.1.66
 remote_project_root=/root/workspace/bench-nginx-ssl-qat
+bench_server_openssl_max_s_time=1600
+bench_server_openssl_repeats=1
 
 # \begin configurations
 dim_ids=()
