@@ -1,0 +1,34 @@
+#!/bin/bash
+
+set -x
+
+. config
+
+function prepare_nginx 
+{
+    local nginx_conf=$1
+
+    scp ${nginx_conf} ${nginx_server}:${remote_nginx_root}/conf/nginx.conf && \
+        ssh ${nginx_server} "${remote_nginx_bin} -t && ${remote_nginx_bin} -s stop && ${remote_nginx_bin}"
+}
+
+function benchmark
+{
+    local bench_id=$1
+
+    for dim_id in ${dim_ids[@]}; do
+        prepare_nginx ${nginx_conf[$dim_id]} && \
+            ssh ${bench_server} "mkdir -p ${remote_project_root}" && \
+            scp config bench ${bench_server}:${remote_project_root}/ && \
+            ssh ${bench_server} "cd ${remote_project_root} && ./bench ${bench_id} ${dim_id}"
+    done
+}
+
+case $1 in
+    bench)
+        benchmark $2
+        ;;
+    *)
+        echo "Usage: $0 bench [bench_id]"
+        exit 1
+esac
