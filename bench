@@ -31,7 +31,7 @@ function bench_nginx_ssl_cps
 
     printf 'number of nginx processes, average CPS\n' >${output_file}
     for nr_nginx_proc in `seq 1 ${nginx_server_max_cores}`; do
-        ssh ${nginx_server} "sed -i 's/worker_processes [1-9]+/worker_processes ${nr_nginx_proc}/g' ${remote_nginx_root}/conf/nginx.conf && \
+        ssh ${nginx_server} "sed -i 's/worker_processes [1-8]/worker_processes ${nr_nginx_proc}/g' ${remote_nginx_root}/conf/nginx.conf && \
                              ${remote_nginx_bin} -s stop && ${remote_nginx_bin}"
 
         # S1: prepare tmpfs for outputs from openssl s_time instances
